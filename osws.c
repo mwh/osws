@@ -25,6 +25,7 @@
 #include <dirent.h>
 #include <stdarg.h>
 #include <time.h>
+#include <errno.h>
 
 #define VERSION "0.3"
 #define STDBUFSIZE 1024
@@ -102,7 +103,14 @@ void write_file(int fd, char *path) {
         nels = fread(buf, 1, LRGBUFSIZE, fp);
         while (nwrt != nels) {
             nels -= nwrt;
-            nwrt = send(fd, spos, nels, 0);
+            nwrt = send(fd, spos, nels, MSG_NOSIGNAL);
+            if (-1 == nwrt) {
+                olog("error: write error: %s", strerror(errno));
+                fclose(fp);
+                close(fd);
+                olog("wrote %i bytes of %s.", tbytes, path);
+                return;
+            }
             spos += nwrt;
             tbytes += nwrt;
         }
