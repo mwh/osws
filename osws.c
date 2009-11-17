@@ -27,6 +27,13 @@
 #include <time.h>
 #include <errno.h>
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+#ifndef SO_NOSIGPIPE
+#define SO_NOSIGPIPE 0
+#endif
+
 #define VERSION "0.3"
 #define STDBUFSIZE 1024
 #define LRGBUFSIZE 4*1024*1024
@@ -248,7 +255,8 @@ int init_server(char *port) {
     }
     sock = socket(servinfo->ai_family, servinfo->ai_socktype,
                     servinfo->ai_protocol);
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR | SO_NOSIGPIPE, &yes,
+                   sizeof(int)) == -1) {
         perror("setsockopt");
         exit(1);
     } 
