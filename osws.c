@@ -17,10 +17,12 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdlib.h>
 #include <libgen.h>
+#include <dirent.h>
 
 #define VERSION "0.3"
 
@@ -91,6 +93,76 @@ void write_file(int fd, char *path) {
     printf("osws: wrote %i bytes of %s.\n", tbytes, path);
 }
 
+void write_file_list(int fd, char *directory) {
+    // Write an HTML directory listing to the stream in HTTP format.
+    // This is really for testing purposes, but I suppose it might
+    // be genuinely useful sometime.
+    DIR *dp;
+    struct dirent *ep;
+    char * fn;
+    char data[1024];
+    char path[1024];
+    struct stat stat_struct;
+    puts("osws: serving directory listing.");
+    dp = opendir(directory);
+    if (dp == NULL)
+        return;
+    data[0] = 0;
+    strcat(data, "HTTP/1.0 200 OK\nConnection: close\n\n"
+           "<!DOCTYPE html>\n<html>\n <head>\n"
+           "  <title>osws directory listing</title>\n </head>\n"
+           " <body>\n  <ul>\n");
+    send(fd, data, strlen(data), 0);
+    while (ep = readdir(dp)) {
+        path[0] = 0;
+        fn = ep->d_name;
+        strcpy(path, directory);
+        strcat(path, "/");
+        strcat(path, fn);
+        if (strcmp(fn, ".") == 0 || strcmp(fn, "..") == 0)
+            continue;
+        if (stat(path, &stat_struct))
+            continue;
+        if (S_ISDIR(stat_struct.st_mode))
+            sprintf(data, "   <li><a href=\"%s/\">%s/</a></li>\n", fn, fn);
+        else
+            sprintf(data, "   <li><a href=\"%s\">%s</a></li>\n", fn, fn);
+        send(fd, data, strlen(data), 0);
+    }
+    data[0] = 0;
+    strcat(data, "  </ul>\n </body>\n</html>\n");
+    send(fd, data, strlen(data), 0);
+    close(fd);
+}
+
+void serve_directory(int fd, char *directory, char *file) {
+    // If file is /, serve a directory listing; otherwise write the
+    // named file in the given directory to the stream. If the file is
+    // itself a directory, give a listing for it.
+    char path[1024];
+    struct stat stat_struct;
+    if (strstr(file, "../") != NULL || strlen(directory) + strlen(file)
+        > 1023) {
+        close(fd);
+        return;
+    }
+    if (strcmp(file, "/") == 0) {
+        write_file_list(fd, directory);
+        return;
+    }
+    strcpy(path, directory);
+    strcat(path, file);
+    if (stat(path, &stat_struct)) {
+        printf("osws: error: could not stat %s\n", path);
+        close(fd);
+        return;
+    }
+    if (S_ISDIR(stat_struct.st_mode))
+        write_file_list(fd, path);
+    else
+        write_file(fd, path);
+}
+
 void print_help() {
     puts("osws " VERSION " - the one-shot web server");
     puts("Usage: osws [-i] [-r] [-p NN] file1 [file2 ...]");
@@ -99,6 +171,7 @@ void print_help() {
     puts("  -i      Infinite loop: serve the files over and over.");
     puts("  -r      Serve from root: do not redirect to the filename.");
     puts("  -p NN   Bind to port NN instead of default.");
+    puts("  -d      Serve file1 as a directory, returning requested files.");
     puts("");
     puts("osws will serve out the files given on the command-line exactly");
     puts("once, in the order given. By default a request to / (the root)");
@@ -179,6 +252,7 @@ int main(int argc, char **argv) {
     // These are changed by command-line options.
     int repeat = 0;
     int redirect = 1;
+    int directory = 0;
 
     addr_size = sizeof raddr;
 
@@ -200,6 +274,10 @@ int main(int argc, char **argv) {
             // Change local port.
             port = argv[i + 1];
             i++;
+        } else if (strcmp(argv[i], "-d") == 0) {
+            // Serve a directory instead.
+            directory = 1;
+            redirect = 0;
         } else if ((strcmp(argv[i], "--help") == 0)
                    || (strcmp(argv[i], "-h") == 0)) {
             print_help();
@@ -233,7 +311,9 @@ int main(int argc, char **argv) {
         printf("osws:  %s %s %s\n", req.type, req.request, req.protocol);
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile));
-        else {
+        else if (directory) {
+            serve_directory(fd, curfile, req.request);
+        } else {
             write_file(fd, curfile);
             fpos++;
         }
