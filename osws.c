@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <libgen.h>
 #include <dirent.h>
+#include <stdarg.h>
 
 #define VERSION "0.3"
 #define STDBUFSIZE 1024
@@ -33,6 +34,15 @@ struct http_request {
     char type[8];
     char protocol[10];
 };
+
+void olog(char *fmt, ...) {
+    va_list args;
+    printf("osws: ");
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}
 
 void read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
@@ -59,7 +69,7 @@ void read_http_request(int fd, struct http_request *hr) {
 
 void write_redirect(int fd, char *dest) {
     char resp[STDBUFSIZE];
-    printf("osws: Sending redirect to /%s.\n", dest);
+    olog("Sending redirect to /%s.", dest);
     sprintf(resp, "HTTP/1.0 302 Found\nLocation: /%s\n"
             "Connection: close\n\n", dest);
     send(fd, resp, strlen(resp), 0);
@@ -75,7 +85,7 @@ void write_file(int fd, char *path) {
     send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, 0);
     fp = fopen(path, "rb");
     if (fp == NULL) {
-        puts("osws: error: error opening file.");
+        olog("error: error opening file %s.", path);
         close(fd);
         return;
     }
@@ -92,7 +102,7 @@ void write_file(int fd, char *path) {
     }
     fclose(fp);
     close(fd);
-    printf("osws: wrote %i bytes of %s.\n", tbytes, path);
+    olog("wrote %i bytes of %s.", tbytes, path);
 }
 
 void write_file_list(int fd, char *directory) {
@@ -105,7 +115,7 @@ void write_file_list(int fd, char *directory) {
     char data[STDBUFSIZE];
     char path[STDBUFSIZE];
     struct stat stat_struct;
-    puts("osws: serving directory listing.");
+    olog("serving directory listing.");
     dp = opendir(directory);
     if (dp == NULL)
         return;
@@ -155,7 +165,7 @@ void serve_directory(int fd, char *directory, char *file) {
     strcpy(path, directory);
     strcat(path, file);
     if (stat(path, &stat_struct)) {
-        printf("osws: error: could not stat %s\n", path);
+        olog("error: could not stat %s", path);
         close(fd);
         return;
     }
@@ -295,21 +305,20 @@ int main(int argc, char **argv) {
     }
     nfiles = argc - i;
     if (nfiles == 0) {
-        puts("osws: error: no filenames given.\n");
+        olog("error: no filenames given.");
         exit(1);
     }
     sock = init_server(port);
     curfile = argv[foffset + fpos];
-    printf("osws: Ready for connections on port %s...\n", port);
-    printf("osws: Preparing to serve %s (%i/%i).\n", curfile, fpos,
-           nfiles);
+    olog("Ready for connections on port %s...", port);
+    olog("Preparing to serve %s (%i/%i).", curfile, fpos, nfiles);
     while (fd = accept(sock, (struct sockaddr *)&raddr, &addr_size)) {
         inet_ntop(raddr.ss_family, get_in_addr((struct sockaddr *)&raddr),
                   ipstr, sizeof ipstr);
-        printf("osws: Incoming request from %s:\n", ipstr);
+        olog("Incoming request from %s:", ipstr);
         memset(&req, 0, sizeof req);
         read_http_request(fd, &req);
-        printf("osws:  %s %s %s\n", req.type, req.request, req.protocol);
+        olog(" %s %s %s", req.type, req.request, req.protocol);
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile));
         else if (directory) {
@@ -325,9 +334,11 @@ int main(int argc, char **argv) {
                 fpos = 1;
         }
         curfile = argv[foffset + fpos];
-        printf("\nosws: Preparing to serve %s (%i/%i).\n", curfile, fpos,
+        puts("");
+        olog("Preparing to serve %s (%i/%i).", curfile, fpos,
                nfiles);
     }
-    puts("\nosws: Served all files, terminating.");
+    puts("");
+    olog("Served all files, terminating.");
     close(sock);
 }
