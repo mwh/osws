@@ -24,6 +24,7 @@
 #include <libgen.h>
 #include <dirent.h>
 #include <stdarg.h>
+#include <time.h>
 
 #define VERSION "0.3"
 #define STDBUFSIZE 1024
@@ -36,8 +37,14 @@ struct http_request {
 };
 
 void olog(char *fmt, ...) {
+    char buf[STDBUFSIZE];
     va_list args;
-    printf("osws: ");
+    time_t rawtime;
+    struct tm *tdata;
+    time(&rawtime);
+    tdata = localtime(&rawtime);
+    strftime(buf, STDBUFSIZE, "%H:%M:%S", tdata);
+    printf("osws: [%s] ", buf);
     va_start(args, fmt);
     vprintf(fmt, args);
     va_end(args);
