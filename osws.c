@@ -25,6 +25,8 @@
 #include <dirent.h>
 
 #define VERSION "0.3"
+#define STDBUFSIZE 1024
+#define LRGBUFSIZE 4*1024*1024
 
 struct http_request {
     char request[256];
@@ -34,29 +36,29 @@ struct http_request {
 
 void read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
-    char buf[1024];
-    char hdr[1024];
+    char buf[STDBUFSIZE];
+    char hdr[STDBUFSIZE];
     int ramt, npos, i;
-    ramt = recv(fd, buf, 1024, 0);
+    ramt = recv(fd, buf, STDBUFSIZE, 0);
     buf[ramt] = 0;
     npos = ramt;
     while (!strstr(buf, "\n")) {
-        ramt = recv(fd, &buf + ramt, 1024-ramt, 0);
+        ramt = recv(fd, &buf + ramt, STDBUFSIZE-ramt, 0);
         npos += ramt;
         buf[npos] = 0;
     }
-    strncpy(hdr, buf, 1024);
+    strncpy(hdr, buf, STDBUFSIZE);
     strncpy(hr->type, strtok(hdr, " \n"), 7);
     strncpy(hr->request, strtok(NULL, " \n"), 255);
     strncpy(hr->protocol, strtok(NULL, " \n"), 8);
     while (strstr(buf, "\r\n\r\n") == NULL && ramt > 0) {
-        ramt = recv(fd, buf, 1024, 0);
+        ramt = recv(fd, buf, STDBUFSIZE, 0);
         buf[ramt] = 0;
     }
 }
 
 void write_redirect(int fd, char *dest) {
-    char resp[1024];
+    char resp[STDBUFSIZE];
     printf("osws: Sending redirect to /%s.\n", dest);
     sprintf(resp, "HTTP/1.0 302 Found\nLocation: /%s\n"
             "Connection: close\n\n", dest);
@@ -67,7 +69,7 @@ void write_redirect(int fd, char *dest) {
 void write_file(int fd, char *path) {
     // Write the file named by path in HTTP form to the stream fd.
     FILE *fp;
-    char buf[10240];
+    char buf[LRGBUFSIZE];
     size_t nels;
     int tbytes = 0;
     send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, 0);
@@ -80,7 +82,7 @@ void write_file(int fd, char *path) {
     while (!feof(fp)) {
         char *spos = buf;
         size_t nwrt = 0;
-        nels = fread(buf, 1, 10240, fp);
+        nels = fread(buf, 1, LRGBUFSIZE, fp);
         while (nwrt != nels) {
             nels -= nwrt;
             nwrt = send(fd, spos, nels, 0);
@@ -100,8 +102,8 @@ void write_file_list(int fd, char *directory) {
     DIR *dp;
     struct dirent *ep;
     char * fn;
-    char data[1024];
-    char path[1024];
+    char data[STDBUFSIZE];
+    char path[STDBUFSIZE];
     struct stat stat_struct;
     puts("osws: serving directory listing.");
     dp = opendir(directory);
@@ -139,10 +141,10 @@ void serve_directory(int fd, char *directory, char *file) {
     // If file is /, serve a directory listing; otherwise write the
     // named file in the given directory to the stream. If the file is
     // itself a directory, give a listing for it.
-    char path[1024];
+    char path[STDBUFSIZE];
     struct stat stat_struct;
     if (strstr(file, "../") != NULL || strlen(directory) + strlen(file)
-        > 1023) {
+        >= STDBUFSIZE) {
         close(fd);
         return;
     }
@@ -241,7 +243,6 @@ int main(int argc, char **argv) {
     // Offset: added to fpos to determine position in argv.
     int foffset = 0;
     int nfiles = 0;
-    char buf[1024];
     char ipstr[80];
     char *port = "8080";
     char *curfile;
