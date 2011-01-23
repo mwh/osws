@@ -71,6 +71,8 @@ void read_http_request(int fd, struct http_request *hr) {
         ramt = recv(fd, &buf + ramt, STDBUFSIZE-ramt, 0);
         npos += ramt;
         buf[npos] = 0;
+        if (ramt == 0)
+            return; // Likely remote closed connection
     }
     strncpy(hdr, buf, STDBUFSIZE);
     strncpy(hr->type, strtok(hdr, " \n"), 7);
@@ -125,6 +127,16 @@ void write_file(int fd, char *path) {
     fclose(fp);
     close(fd);
     olog("wrote %i bytes of %s.", tbytes, path);
+}
+
+void write_404(int fd, char *path) {
+    // Write a 404 not found response.
+    char data[STDBUFSIZE];
+    olog("serving 404 error.");
+    data[0] = 0;
+    strcat(data, "HTTP/1.0 404 Not Found\nConnection: close\n\n");
+    send(fd, data, strlen(data), 0);
+    close(fd);
 }
 
 void write_file_list(int fd, char *directory) {
@@ -199,7 +211,7 @@ void serve_directory(int fd, char *directory, char *file) {
     }
     if (stat(path, &stat_struct)) {
         olog("error: could not stat %s", path);
-        close(fd);
+        write_404(fd, path);
         return;
     }
     if (S_ISDIR(stat_struct.st_mode))
