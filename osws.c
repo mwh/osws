@@ -173,6 +173,7 @@ void serve_directory(int fd, char *directory, char *file) {
     // If file is /, serve a directory listing; otherwise write the
     // named file in the given directory to the stream. If the file is
     // itself a directory, give a listing for it.
+    int i;
     char path[STDBUFSIZE];
     struct stat stat_struct;
     if (strstr(file, "../") != NULL || strlen(directory) + strlen(file)
@@ -186,6 +187,16 @@ void serve_directory(int fd, char *directory, char *file) {
     }
     strcpy(path, directory);
     strcat(path, file);
+    // For the moment, this only deals with URL-encoded spaces,
+    // since that's all I had around.
+    char *ch;
+    while (ch = strstr(path, "%20")) {
+        ch[0] = 32;
+        for (i = 1; i< strlen(path) - (ch - path); i++) {
+            ch[i] = ch[i+2];
+        }
+        printf("made one replacement: %s\n", path);
+    }
     if (stat(path, &stat_struct)) {
         olog("error: could not stat %s", path);
         close(fd);
