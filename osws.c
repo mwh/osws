@@ -89,7 +89,7 @@ void write_redirect(int fd, char *dest) {
     olog("Sending redirect to /%s.", dest);
     sprintf(resp, "HTTP/1.0 302 Found\nLocation: /%s\n"
             "Connection: close\n\n", dest);
-    send(fd, resp, strlen(resp), 0);
+    send(fd, resp, strlen(resp), MSG_NOSIGNAL);
     close(fd);
 }
 
@@ -99,7 +99,7 @@ void write_file(int fd, char *path) {
     char buf[LRGBUFSIZE];
     size_t nels;
     int tbytes = 0;
-    send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, 0);
+    send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, MSG_NOSIGNAL);
     fp = fopen(path, "rb");
     if (fp == NULL) {
         olog("error: error opening file %s.", path);
@@ -135,7 +135,7 @@ void write_404(int fd, char *path) {
     olog("serving 404 error.");
     data[0] = 0;
     strcat(data, "HTTP/1.0 404 Not Found\nConnection: close\n\n");
-    send(fd, data, strlen(data), 0);
+    send(fd, data, strlen(data), MSG_NOSIGNAL);
     close(fd);
 }
 
@@ -158,7 +158,7 @@ void write_file_list(int fd, char *directory) {
            "<!DOCTYPE html>\n<html>\n <head>\n"
            "  <title>osws directory listing</title>\n </head>\n"
            " <body>\n  <ul>\n");
-    send(fd, data, strlen(data), 0);
+    send(fd, data, strlen(data), MSG_NOSIGNAL);
     while (ep = readdir(dp)) {
         path[0] = 0;
         fn = ep->d_name;
@@ -173,11 +173,11 @@ void write_file_list(int fd, char *directory) {
             sprintf(data, "   <li><a href=\"%s/\">%s/</a></li>\n", fn, fn);
         else
             sprintf(data, "   <li><a href=\"%s\">%s</a></li>\n", fn, fn);
-        send(fd, data, strlen(data), 0);
+        send(fd, data, strlen(data), MSG_NOSIGNAL);
     }
     data[0] = 0;
     strcat(data, "  </ul>\n </body>\n</html>\n");
-    send(fd, data, strlen(data), 0);
+    send(fd, data, strlen(data), MSG_NOSIGNAL);
     close(fd);
 }
 
