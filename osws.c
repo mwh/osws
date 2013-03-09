@@ -42,6 +42,15 @@ struct http_request {
     char request[256];
     char type[8];
     char protocol[10];
+    char headers[STDBUFSIZE];
+    int numheaders;
+};
+
+struct line {
+    char buf[STDBUFSIZE];
+    int offset;
+    char *start;
+    int length;
 };
 
 void olog(char *fmt, ...) {
@@ -59,12 +68,6 @@ void olog(char *fmt, ...) {
     printf("\n");
 }
 
-struct line {
-    char buf[STDBUFSIZE];
-    int offset;
-    char *start;
-    int length;
-};
 int receive_line(int fd, struct line *line) {
     int i;
     int startoffset = line->offset;
@@ -95,7 +98,9 @@ int receive_line(int fd, struct line *line) {
 int read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
     char hdr[STDBUFSIZE];
+    int i = 0;
     struct line line;
+    char *tmp;
     line.offset = 0;
     if (receive_line(fd, &line))
         return 1;
@@ -103,13 +108,20 @@ int read_http_request(int fd, struct http_request *hr) {
     strncpy(hr->type, strtok(hdr, " \n"), 7);
     strncpy(hr->request, strtok(NULL, " \n"), 255);
     strncpy(hr->protocol, strtok(NULL, " \n"), 8);
+    char *begin_headers = NULL;
     while (!receive_line(fd, &line)) {
+        if (!begin_headers)
+            begin_headers = line.start;
         strncpy(hdr, line.start, line.length);
         hdr[line.length] = 0;
         if (strcmp(hdr, "\r") == 0)
-            return 0;
-        fprintf(stderr, " Got header (%i/%i): %s\n", strlen(hdr), line.length, hdr);
+            break;
+        *(line.start + line.length - 1) = 0;
+        i++;
     }
+    memcpy(hr->headers, begin_headers, line.offset);
+    hr->headers[line.offset] = 0;
+    hr->numheaders = i;
     return 0;
 }
 
@@ -397,6 +409,14 @@ int main(int argc, char **argv) {
             continue;
         }
         olog(" %s %s %s", req.type, req.request, req.protocol);
+        char *hdrs = req.headers;
+        char hdr[STDBUFSIZE];
+        olog("  %i headers:", req.numheaders);
+        for (i=0; i<req.numheaders; i++) {
+            strcpy(hdr, hdrs);
+            olog("   %s", hdr);
+            hdrs += strlen(hdr) + 2;
+        }
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile));
         else if (directory) {
