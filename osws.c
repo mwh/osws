@@ -105,9 +105,18 @@ int read_http_request(int fd, struct http_request *hr) {
     if (receive_line(fd, &line))
         return 1;
     strncpy(hdr, line.start, line.length);
-    strncpy(hr->type, strtok(hdr, " \n"), 7);
-    strncpy(hr->request, strtok(NULL, " \n"), 255);
-    strncpy(hr->protocol, strtok(NULL, " \n"), 8);
+    tmp = strtok(hdr, " \n");
+    if (tmp)
+        strncpy(hr->type, tmp, 7);
+    else return 1;
+    tmp = strtok(NULL, " \n");
+    if (tmp)
+        strncpy(hr->request, tmp, 255);
+    else return 1;
+    tmp = strtok(NULL, " \n");
+    if (tmp)
+        strncpy(hr->protocol, tmp, 8);
+    else return 1;
     char *begin_headers = NULL;
     while (!receive_line(fd, &line)) {
         if (!begin_headers)
@@ -406,6 +415,7 @@ int main(int argc, char **argv) {
         memset(&req, 0, sizeof req);
         if (read_http_request(fd, &req)) {
             olog(" Error reading request; aborting.");
+            close(fd);
             continue;
         }
         olog(" %s %s %s", req.type, req.request, req.protocol);
