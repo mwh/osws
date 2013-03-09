@@ -59,30 +59,58 @@ void olog(char *fmt, ...) {
     printf("\n");
 }
 
+struct line {
+    char buf[STDBUFSIZE];
+    int offset;
+    char *start;
+    int length;
+};
+int receive_line(int fd, struct line *line) {
+    int i;
+    int startoffset = line->offset;
+    if (line->offset > 0)
+        line->start = line->start + line->length + 1;
+    else
+        line->start = line->buf;
+    for (i=line->start-line->buf; i<line->offset; i++) {
+        if (line->buf[i] == '\n') {
+            line->length = i - (line->start - line->buf);
+            return 0;
+        }
+    }
+    while (1) {
+        int ramt = recv(fd, line->buf + line->offset,
+                STDBUFSIZE-line->offset, 0);
+        line->offset += ramt;
+        for (i=line->start-line->buf; i<line->offset; i++)
+            if (line->buf[i] == '\n') {
+                line->length = i - (line->start - line->buf);
+                return 0;
+            }
+        if (ramt == 0)
+            return 1;
+    }
+    return 0;
+}
 int read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
-    char buf[STDBUFSIZE];
     char hdr[STDBUFSIZE];
-    int ramt, npos, i;
-    ramt = recv(fd, buf, STDBUFSIZE, 0);
-    buf[ramt] = 0;
-    npos = ramt;
-    while (!strstr(buf, "\n")) {
-        ramt = recv(fd, &buf + npos, STDBUFSIZE-npos, 0);
-        npos += ramt;
-        buf[npos] = 0;
-        if (npos >= STDBUFSIZE - 1 || ramt == 0)
-            return 0; // Likely remote closed connection
-    }
-    strncpy(hdr, buf, STDBUFSIZE);
+    struct line line;
+    line.offset = 0;
+    if (receive_line(fd, &line))
+        return 1;
+    strncpy(hdr, line.start, line.length);
     strncpy(hr->type, strtok(hdr, " \n"), 7);
     strncpy(hr->request, strtok(NULL, " \n"), 255);
     strncpy(hr->protocol, strtok(NULL, " \n"), 8);
-    while (strstr(buf, "\r\n\r\n") == NULL && ramt > 0) {
-        ramt = recv(fd, buf, STDBUFSIZE, 0);
-        buf[ramt] = 0;
+    while (!receive_line(fd, &line)) {
+        strncpy(hdr, line.start, line.length);
+        hdr[line.length] = 0;
+        if (strcmp(hdr, "\r") == 0)
+            return 0;
+        fprintf(stderr, " Got header (%i/%i): %s\n", strlen(hdr), line.length, hdr);
     }
-    return 1;
+    return 0;
 }
 
 void write_redirect(int fd, char *dest) {
@@ -364,7 +392,7 @@ int main(int argc, char **argv) {
                   ipstr, sizeof ipstr);
         olog("Incoming request from %s:", ipstr);
         memset(&req, 0, sizeof req);
-        if (!read_http_request(fd, &req)) {
+        if (read_http_request(fd, &req)) {
             olog(" Error reading request; aborting.");
             continue;
         }
