@@ -34,7 +34,7 @@
 #define SO_NOSIGPIPE 0
 #endif
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 #define STDBUFSIZE 1024
 #define LRGBUFSIZE 4*1024*1024
 
@@ -59,7 +59,7 @@ void olog(char *fmt, ...) {
     printf("\n");
 }
 
-void read_http_request(int fd, struct http_request *hr) {
+int read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
     char buf[STDBUFSIZE];
     char hdr[STDBUFSIZE];
@@ -82,6 +82,7 @@ void read_http_request(int fd, struct http_request *hr) {
         ramt = recv(fd, buf, STDBUFSIZE, 0);
         buf[ramt] = 0;
     }
+    return 1;
 }
 
 void write_redirect(int fd, char *dest) {
@@ -363,7 +364,10 @@ int main(int argc, char **argv) {
                   ipstr, sizeof ipstr);
         olog("Incoming request from %s:", ipstr);
         memset(&req, 0, sizeof req);
-        read_http_request(fd, &req);
+        if (!read_http_request(fd, &req)) {
+            olog(" Error reading request; aborting.");
+            continue;
+        }
         olog(" %s %s %s", req.type, req.request, req.protocol);
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile));
