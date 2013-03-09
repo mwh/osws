@@ -279,6 +279,7 @@ void print_help() {
     puts("  -r      Serve from root: do not redirect to the filename.");
     puts("  -p NN   Bind to port NN instead of default.");
     puts("  -d      Serve file1 as a directory, returning requested files.");
+    puts("  -H      Log request headers to output.");
     puts("");
     puts("osws will serve out the files given on the command-line exactly");
     puts("once, in the order given. By default a request to / (the root)");
@@ -360,6 +361,7 @@ int main(int argc, char **argv) {
     int repeat = 0;
     int redirect = 1;
     int directory = 0;
+    int show_headers = 0;
 
     addr_size = sizeof raddr;
 
@@ -385,6 +387,9 @@ int main(int argc, char **argv) {
             // Serve a directory instead.
             directory = 1;
             redirect = 0;
+        } else if (strcmp(argv[i], "-H") == 0) {
+            // Log request headers to output
+            show_headers = 1;
         } else if ((strcmp(argv[i], "--help") == 0)
                    || (strcmp(argv[i], "-h") == 0)) {
             print_help();
@@ -419,13 +424,15 @@ int main(int argc, char **argv) {
             continue;
         }
         olog(" %s %s %s", req.type, req.request, req.protocol);
-        char *hdrs = req.headers;
-        char hdr[STDBUFSIZE];
-        olog("  %i headers:", req.numheaders);
-        for (i=0; i<req.numheaders; i++) {
-            strcpy(hdr, hdrs);
-            olog("   %s", hdr);
-            hdrs += strlen(hdr) + 2;
+        if (show_headers) {
+            char *hdrs = req.headers;
+            char hdr[STDBUFSIZE];
+            olog("  %i headers:", req.numheaders);
+            for (i=0; i<req.numheaders; i++) {
+                strcpy(hdr, hdrs);
+                olog("   %s", hdr);
+                hdrs += strlen(hdr) + 2;
+            }
         }
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile));
