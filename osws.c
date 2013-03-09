@@ -1,4 +1,4 @@
-// Copyright (C) 2009 Michael Homer <=mwh>
+// Copyright (C) 2009, 2013 Michael Homer <mwh@mwh.geek.nz>
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -68,11 +68,11 @@ void read_http_request(int fd, struct http_request *hr) {
     buf[ramt] = 0;
     npos = ramt;
     while (!strstr(buf, "\n")) {
-        ramt = recv(fd, &buf + ramt, STDBUFSIZE-ramt, 0);
+        ramt = recv(fd, &buf + npos, STDBUFSIZE-npos, 0);
         npos += ramt;
         buf[npos] = 0;
-        if (ramt == 0)
-            return; // Likely remote closed connection
+        if (npos >= STDBUFSIZE - 1 || ramt == 0)
+            return 0; // Likely remote closed connection
     }
     strncpy(hdr, buf, STDBUFSIZE);
     strncpy(hr->type, strtok(hdr, " \n"), 7);
