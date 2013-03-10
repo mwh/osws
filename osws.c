@@ -42,6 +42,7 @@ struct http_request {
     char request[256];
     char type[8];
     char protocol[10];
+    char host[256];
     char headers[STDBUFSIZE];
     int numheaders;
 };
@@ -66,6 +67,31 @@ void olog(char *fmt, ...) {
     vprintf(fmt, args);
     va_end(args);
     printf("\n");
+}
+
+char *error_msg(int code) {
+    switch(code) {
+        case 200: return "OK";
+        case 400: return "Bad Request";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 418: return "I'm a teapot";
+        case 431: return "Request Header Fields Too Large";
+        case 414: return "Request-URI Too Long";
+        case 500: return "Internal Server Error";
+        default: return "";
+    }
+}
+
+int write_error(int fd, int code, char *msg) {
+    olog("serving %i error.");
+    char data[STDBUFSIZE];
+    if (!msg)
+        msg = error_msg(code);
+    sprintf(data, "HTTP/1.0 %i %s\nConnection: close\n\n", code, msg);
+    send(fd, data, strlen(data), MSG_NOSIGNAL);
+    close(fd);
+    return 1;
 }
 
 int receive_line(int fd, struct line *line) {
@@ -95,6 +121,27 @@ int receive_line(int fd, struct line *line) {
     }
     return 0;
 }
+
+int parse_request_line(int fd, char *hdr, struct http_request *hr) {
+    char *tmp;
+    if (strncmp(hdr, "GET ", 4) != 0)
+        return write_error(fd, 405, NULL);
+    strcpy(hr->type, "GET");
+    // Request URI
+    if (tmp = strtok(hdr + 4, " \n"))  {
+        if (strlen(tmp) < 255)
+            strncpy(hr->request, tmp, 255);
+        else return write_error(fd, 414, NULL);
+    } else return write_error(fd, 400, NULL);
+    // Protocol
+    if (tmp = strtok(NULL, " \n")) {
+        if (strlen(tmp) < 9)
+            strncpy(hr->protocol, tmp, 9);
+        else return write_error(fd, 505, NULL);
+    } else return write_error(fd, 400, NULL);
+    return 0;
+}
+
 int read_http_request(int fd, struct http_request *hr) {
     // Consume an HTTP request from fd, filling an http_request with details.
     char hdr[STDBUFSIZE];
@@ -105,24 +152,20 @@ int read_http_request(int fd, struct http_request *hr) {
     if (receive_line(fd, &line))
         return 1;
     strncpy(hdr, line.start, line.length);
-    tmp = strtok(hdr, " \n");
-    if (tmp)
-        strncpy(hr->type, tmp, 7);
-    else return 1;
-    tmp = strtok(NULL, " \n");
-    if (tmp)
-        strncpy(hr->request, tmp, 255);
-    else return 1;
-    tmp = strtok(NULL, " \n");
-    if (tmp)
-        strncpy(hr->protocol, tmp, 8);
-    else return 1;
+    hdr[line.length - 1] = 0;
+    if (i=parse_request_line(fd, hdr, hr))
+        return i;
     char *begin_headers = NULL;
     while (!receive_line(fd, &line)) {
         if (!begin_headers)
             begin_headers = line.start;
         strncpy(hdr, line.start, line.length);
         hdr[line.length] = 0;
+        if (strncmp(hdr, "Host:", 5) == 0) {
+            if (strlen(hdr) < 250)
+                strcpy(hr->host, hdr + 6);
+            hr->host[line.length - 6 - 1] = 0;
+        }
         if (strcmp(hdr, "\r") == 0)
             break;
         *(line.start + line.length - 1) = 0;
@@ -134,11 +177,15 @@ int read_http_request(int fd, struct http_request *hr) {
     return 0;
 }
 
-void write_redirect(int fd, char *dest) {
+void write_redirect(int fd, char *dest, struct http_request *req) {
     char resp[STDBUFSIZE];
     olog("Sending redirect to /%s.", dest);
-    sprintf(resp, "HTTP/1.0 302 Found\nLocation: /%s\n"
-            "Connection: close\n\n", dest);
+    if (req->host[0])
+        sprintf(resp, "HTTP/1.0 302 Found\nLocation: http://%s/%s\n"
+                "Connection: close\n\n", req->host, dest);
+    else
+        sprintf(resp, "HTTP/1.0 302 Found\nLocation: /%s\n"
+                "Connection: close\n\n", dest);
     send(fd, resp, strlen(resp), MSG_NOSIGNAL);
     close(fd);
 }
@@ -149,13 +196,13 @@ void write_file(int fd, char *path) {
     char buf[LRGBUFSIZE];
     size_t nels;
     int tbytes = 0;
-    send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, MSG_NOSIGNAL);
     fp = fopen(path, "rb");
     if (fp == NULL) {
         olog("error: error opening file %s.", path);
-        close(fd);
+        write_error(fd, 404, NULL);
         return;
     }
+    send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, MSG_NOSIGNAL);
     while (!feof(fp)) {
         char *spos = buf;
         size_t nwrt = 0;
@@ -177,16 +224,6 @@ void write_file(int fd, char *path) {
     fclose(fp);
     close(fd);
     olog("wrote %i bytes of %s.", tbytes, path);
-}
-
-void write_404(int fd, char *path) {
-    // Write a 404 not found response.
-    char data[STDBUFSIZE];
-    olog("serving 404 error.");
-    data[0] = 0;
-    strcat(data, "HTTP/1.0 404 Not Found\nConnection: close\n\n");
-    send(fd, data, strlen(data), MSG_NOSIGNAL);
-    close(fd);
 }
 
 void write_file_list(int fd, char *directory) {
@@ -261,7 +298,7 @@ void serve_directory(int fd, char *directory, char *file) {
     }
     if (stat(path, &stat_struct)) {
         olog("error: could not stat %s", path);
-        write_404(fd, path);
+        write_error(fd, 404, NULL);
         return;
     }
     if (S_ISDIR(stat_struct.st_mode))
@@ -435,7 +472,7 @@ int main(int argc, char **argv) {
             }
         }
         if (redirect && strcmp("/", req.request) == 0)
-            write_redirect(fd, basename(curfile));
+            write_redirect(fd, basename(curfile), &req);
         else if (directory) {
             serve_directory(fd, curfile, req.request);
         } else {
