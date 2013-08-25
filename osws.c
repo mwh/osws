@@ -12,6 +12,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#define _POSIX_C_SOURCE 200112L
+
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
@@ -96,7 +98,6 @@ int write_error(int fd, int code, char *msg) {
 
 int receive_line(int fd, struct line *line) {
     int i;
-    int startoffset = line->offset;
     if (line->offset > 0)
         line->start = line->start + line->length + 1;
     else
@@ -128,13 +129,13 @@ int parse_request_line(int fd, char *hdr, struct http_request *hr) {
         return write_error(fd, 405, NULL);
     strcpy(hr->type, "GET");
     // Request URI
-    if (tmp = strtok(hdr + 4, " \n"))  {
+    if ((tmp = strtok(hdr + 4, " \n")))  {
         if (strlen(tmp) < 255)
             strncpy(hr->request, tmp, 255);
         else return write_error(fd, 414, NULL);
     } else return write_error(fd, 400, NULL);
     // Protocol
-    if (tmp = strtok(NULL, " \n")) {
+    if ((tmp = strtok(NULL, " \n"))) {
         if (strlen(tmp) < 9)
             strncpy(hr->protocol, tmp, 9);
         else return write_error(fd, 505, NULL);
@@ -147,13 +148,12 @@ int read_http_request(int fd, struct http_request *hr) {
     char hdr[STDBUFSIZE];
     int i = 0;
     struct line line;
-    char *tmp;
     line.offset = 0;
     if (receive_line(fd, &line))
         return 1;
     strncpy(hdr, line.start, line.length);
     hdr[line.length - 1] = 0;
-    if (i=parse_request_line(fd, hdr, hr))
+    if ((i=parse_request_line(fd, hdr, hr)))
         return i;
     char *begin_headers = NULL;
     while (!receive_line(fd, &line)) {
@@ -246,7 +246,7 @@ void write_file_list(int fd, char *directory) {
            "  <title>osws directory listing</title>\n </head>\n"
            " <body>\n  <ul>\n");
     send(fd, data, strlen(data), MSG_NOSIGNAL);
-    while (ep = readdir(dp)) {
+    while ((ep = readdir(dp))) {
         path[0] = 0;
         fn = ep->d_name;
         strcpy(path, directory);
@@ -287,7 +287,6 @@ void serve_directory(int fd, char *directory, char *file) {
     // If file is /, serve a directory listing; otherwise write the
     // named file in the given directory to the stream. If the file is
     // itself a directory, give a listing for it.
-    int i;
     char req_path[STDBUFSIZE];
     struct stat stat_struct;
     if (strstr(file, "../") != NULL || strlen(directory) + strlen(file)
@@ -303,16 +302,6 @@ void serve_directory(int fd, char *directory, char *file) {
     strcat(req_path, file);
     char path[STDBUFSIZE];
     urldecode(path, req_path);
-    // For the moment, this only deals with URL-encoded spaces,
-    // since that's all I had around.
-    char *ch;
-    while (ch = strstr(path, "%20")) {
-        ch[0] = 32;
-        for (i = 1; i< strlen(path) - (ch - path); i++) {
-            ch[i] = ch[i+2];
-        }
-        printf("made one replacement: %s\n", path);
-    }
     if (stat(path, &stat_struct)) {
         olog("error: could not stat %s", path);
         write_error(fd, 404, NULL);
@@ -398,7 +387,7 @@ int init_server(char *port) {
 int main(int argc, char **argv) {
     int i;
     int sock;
-    int addr_size;
+    socklen_t addr_size;
     int fd;
     // Position of file currently being served.
     int fpos = 1;
@@ -409,7 +398,6 @@ int main(int argc, char **argv) {
     char *port = "8080";
     char *curfile;
     struct sockaddr_storage raddr;
-    struct addrinfo *servinfo;
     struct http_request req;
 
     // These are changed by command-line options.
@@ -472,7 +460,7 @@ int main(int argc, char **argv) {
     curfile = argv[foffset + fpos];
     olog("Ready for connections on port %s...", port);
     olog("Preparing to serve %s (%i/%i).", curfile, fpos, nfiles);
-    while (fd = accept(sock, (struct sockaddr *)&raddr, &addr_size)) {
+    while ((fd = accept(sock, (struct sockaddr *)&raddr, &addr_size))) {
         inet_ntop(raddr.ss_family, get_in_addr((struct sockaddr *)&raddr),
                   ipstr, sizeof ipstr);
         olog("Incoming request from %s:", ipstr);
