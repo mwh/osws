@@ -334,6 +334,7 @@ void print_help() {
     puts("  -p NN   Bind to port NN instead of default.");
     puts("  -d      Serve file1 as a directory, returning requested files.");
     puts("  -H      Log request headers to output.");
+    puts("  -q      Retain query string as part of request path.");
     puts("");
     puts("osws will serve out the files given on the command-line exactly");
     puts("once, in the order given. By default a request to / (the root)");
@@ -416,6 +417,7 @@ int main(int argc, char **argv) {
     int redirect = 1;
     int directory = 0;
     int show_headers = 0;
+    int trim_query = 1;
 
     addr_size = sizeof raddr;
 
@@ -444,6 +446,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-H") == 0) {
             // Log request headers to output
             show_headers = 1;
+        } else if (strcmp(argv[i], "-q") == 0) {
+            // Retain query string in request path
+            trim_query = 0;
         } else if ((strcmp(argv[i], "--help") == 0)
                    || (strcmp(argv[i], "-h") == 0)) {
             print_help();
@@ -486,6 +491,16 @@ int main(int argc, char **argv) {
                 strcpy(hdr, hdrs);
                 olog("   %s", hdr);
                 hdrs += strlen(hdr) + 2;
+            }
+        }
+        if (trim_query) {
+            char *c = req.request;
+            while (*c != '\0') {
+                if (*c == '?') {
+                    *c = '\0';
+                    break;
+                }
+                c++;
             }
         }
         if (redirect && strcmp("/", req.request) == 0)
