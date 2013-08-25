@@ -268,12 +268,27 @@ void write_file_list(int fd, char *directory) {
     close(fd);
 }
 
+#define HEXDEC(c) ((c >= '0' && c <= '9') ? c - '0' : ((c >= 'a' && c <= 'f') ? 10 + c - 'a' : c))
+void urldecode(char *dest, const char *src) {
+    while (*src != 0) {
+        if (*src == '%') {
+            src++;
+            char c = 16 * HEXDEC(*src);
+            src++;
+            c += HEXDEC(*src);
+            *dest = c;
+        } else 
+            *dest = *src;
+        dest++, src++;
+    }
+    *dest = 0;
+}
 void serve_directory(int fd, char *directory, char *file) {
     // If file is /, serve a directory listing; otherwise write the
     // named file in the given directory to the stream. If the file is
     // itself a directory, give a listing for it.
     int i;
-    char path[STDBUFSIZE];
+    char req_path[STDBUFSIZE];
     struct stat stat_struct;
     if (strstr(file, "../") != NULL || strlen(directory) + strlen(file)
         >= STDBUFSIZE) {
@@ -284,8 +299,10 @@ void serve_directory(int fd, char *directory, char *file) {
         write_file_list(fd, directory);
         return;
     }
-    strcpy(path, directory);
-    strcat(path, file);
+    strcpy(req_path, directory);
+    strcat(req_path, file);
+    char path[STDBUFSIZE];
+    urldecode(path, req_path);
     // For the moment, this only deals with URL-encoded spaces,
     // since that's all I had around.
     char *ch;
