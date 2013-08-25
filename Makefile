@@ -9,6 +9,9 @@ install: osws
 clean:
 	rm -f osws
 
+osws: osws.c
+	$(CC) -std=c99 -Wall -o osws osws.c
+
 release: clean
 	(cd /tmp && \
 	mkdir osws-$(VERSION) && \
