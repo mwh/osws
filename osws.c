@@ -378,7 +378,10 @@ int init_server(char *port) {
         perror("setsockopt");
         exit(1);
     } 
-    bind(sock, servinfo->ai_addr, servinfo->ai_addrlen);
+    if (bind(sock, servinfo->ai_addr, servinfo->ai_addrlen) != 0) {
+        fprintf(stderr, "bind error: %s\n", strerror(errno));
+        exit(1);
+    }
     freeaddrinfo(servinfo);
     listen(sock, 5);
     return sock;
