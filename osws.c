@@ -283,7 +283,24 @@ void urldecode(char *dest, const char *src) {
     }
     *dest = 0;
 }
-void serve_directory(int fd, char *directory, char *file) {
+
+int write_directory_index(int fd, char *directory, char *directory_index) {
+    if (!directory_index)
+        return 0;
+    char buf[strlen(directory) + strlen(directory_index) + 2];
+    strcpy(buf, directory);
+    strcat(buf, "/");
+    strcat(buf, directory_index);
+    struct stat stat_struct;
+    if (!stat(buf, &stat_struct)) {
+        write_file(fd, buf);
+        return 1;
+    }
+    return 0;
+}
+
+void serve_directory(int fd, char *directory, char *file,
+        char *directory_index) {
     // If file is /, serve a directory listing; otherwise write the
     // named file in the given directory to the stream. If the file is
     // itself a directory, give a listing for it.
@@ -295,6 +312,8 @@ void serve_directory(int fd, char *directory, char *file) {
         return;
     }
     if (strcmp(file, "/") == 0) {
+        if (write_directory_index(fd, directory, directory_index))
+            return;
         write_file_list(fd, directory);
         return;
     }
@@ -307,9 +326,11 @@ void serve_directory(int fd, char *directory, char *file) {
         write_error(fd, 404, NULL);
         return;
     }
-    if (S_ISDIR(stat_struct.st_mode))
+    if (S_ISDIR(stat_struct.st_mode)) {
+        if (write_directory_index(fd, path, directory_index))
+            return;
         write_file_list(fd, path);
-    else
+    } else
         write_file(fd, path);
 }
 
@@ -322,6 +343,7 @@ void print_help() {
     puts("  -r      Serve from root: do not redirect to the filename.");
     puts("  -p NN   Bind to port NN instead of default.");
     puts("  -d      Serve file1 as a directory, returning requested files.");
+    puts("  -I IDX  Use IDX as directory index file with -d, if it exists.");
     puts("  -H      Log request headers to output.");
     puts("  -q      Retain query string as part of request path.");
     puts("");
@@ -407,6 +429,7 @@ int main(int argc, char **argv) {
     int repeat = 0;
     int redirect = 1;
     int directory = 0;
+    char *directory_index = NULL;
     int show_headers = 0;
     int trim_query = 1;
 
@@ -434,6 +457,9 @@ int main(int argc, char **argv) {
             // Serve a directory instead.
             directory = 1;
             redirect = 0;
+        } else if (strcmp(argv[i], "-I") == 0) {
+            // Serve a given file as a directory index.
+            directory_index = argv[++i];
         } else if (strcmp(argv[i], "-H") == 0) {
             // Log request headers to output
             show_headers = 1;
@@ -497,7 +523,7 @@ int main(int argc, char **argv) {
         if (redirect && strcmp("/", req.request) == 0)
             write_redirect(fd, basename(curfile), &req);
         else if (directory) {
-            serve_directory(fd, curfile, req.request);
+            serve_directory(fd, curfile, req.request, directory_index);
         } else {
             write_file(fd, curfile);
             fpos++;
