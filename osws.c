@@ -1,4 +1,4 @@
-// Copyright (C) 2009, 2013 Michael Homer <mwh@mwh.geek.nz>
+// Copyright (C) 2009, 2011, 2013 Michael Homer <mwh@mwh.geek.nz>
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -359,7 +359,7 @@ void print_help() {
 
 void print_version() {
     puts("osws " VERSION " - the one-shot web server");
-    puts("Copyright (C) 2009 Michael Homer");
+    puts("Copyright (C) 2009, 2011, 2013 Michael Homer");
     puts("Licence GPLv3+: GNU GPL version 3 or later "
          "<http://gnu.org/licenses/gpl.html>.");
     puts("This is free software: you are free to change and redistribute it.");
