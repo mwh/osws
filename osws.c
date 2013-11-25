@@ -28,6 +28,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <errno.h>
+#include <magic.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -55,6 +56,15 @@ struct line {
     char *start;
     int length;
 };
+
+struct extensionmap {
+    char *extension;
+    char *mime;
+    struct extensionmap *next;
+};
+
+magic_t magic;
+struct extensionmap *extensionmap;
 
 void olog(char *fmt, ...) {
     char buf[STDBUFSIZE];
@@ -94,6 +104,31 @@ int write_error(int fd, int code, char *msg) {
     send(fd, data, strlen(data), MSG_NOSIGNAL);
     close(fd);
     return 1;
+}
+
+const char *find_path_mime(const char *path) {
+    const char *end = path + strlen(path);
+    struct extensionmap *tmp = extensionmap;
+    while (tmp) {
+        if (strcmp(tmp->extension, end - strlen(tmp->extension)) == 0)
+            return tmp->mime;
+        tmp = tmp->next;
+    }
+    return NULL;
+}
+
+void add_extension(char *extension, char *mimetype) {
+    struct extensionmap *tmp = malloc(sizeof(struct extensionmap));
+    tmp->extension = extension;
+    tmp->mime = mimetype;
+    tmp->next = extensionmap;
+    extensionmap = tmp;
+}
+
+void populate_extensions() {
+    add_extension(".js", "text/javascript");
+    add_extension(".css", "text/css");
+    add_extension(".html", "text/html");
 }
 
 int receive_line(int fd, struct line *line) {
@@ -190,6 +225,15 @@ void write_redirect(int fd, char *dest, struct http_request *req) {
     close(fd);
 }
 
+int endswith(const char *haystack, const char *needle) {
+    int len = strlen(haystack);
+    int nlen = strlen(needle);
+    if (nlen > len)
+        return 0;
+    const char *c = haystack + (len - nlen);
+    return !strcmp(c, needle);
+}
+
 void write_file(int fd, char *path) {
     // Write the file named by path in HTTP form to the stream fd.
     FILE *fp;
@@ -202,7 +246,18 @@ void write_file(int fd, char *path) {
         write_error(fd, 404, NULL);
         return;
     }
-    send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, MSG_NOSIGNAL);
+    if (magic) {
+        const char *mimestr = find_path_mime(path);
+        if (!mimestr)
+            mimestr = magic_file(magic, path);
+        send(fd, "HTTP/1.0 200 OK\n", 16, MSG_NOSIGNAL);
+        send(fd, "Content-type: ", 14, MSG_NOSIGNAL);
+        send(fd, mimestr, strlen(mimestr), MSG_NOSIGNAL);
+        send(fd, "\n", 1, MSG_NOSIGNAL);
+        send(fd, "Connection: close\n\n", 19, MSG_NOSIGNAL);
+    } else {
+        send(fd, "HTTP/1.0 200 OK\nConnection: close\n\n", 35, MSG_NOSIGNAL);
+    }
     while (!feof(fp)) {
         char *spos = buf;
         size_t nwrt = 0;
@@ -339,13 +394,15 @@ void print_help() {
     puts("Usage: osws [-i] [-r] [-p NN] file1 [file2 ...]");
     puts("Serve out individual files over HTTP.");
     puts("");
-    puts("  -i      Infinite loop: serve the files over and over.");
-    puts("  -r      Serve from root: do not redirect to the filename.");
-    puts("  -p NN   Bind to port NN instead of default.");
-    puts("  -d      Serve file1 as a directory, returning requested files.");
-    puts("  -I IDX  Use IDX as directory index file with -d, if it exists.");
-    puts("  -H      Log request headers to output.");
-    puts("  -q      Retain query string as part of request path.");
+    puts("  -i         Infinite loop: serve the files over and over.");
+    puts("  -r         Serve from root: do not redirect to the filename.");
+    puts("  -p NN      Bind to port NN instead of default.");
+    puts("  -d         Serve file1 as a directory, returning requested files.");
+    puts("  -I IDX     Use IDX as directory index file with -d, if it exists.");
+    puts("  -m         Serve Content-type headers inferred by libmagic.");
+    puts("  -M .X A/B  Override default content type for .X with a/b.");
+    puts("  -H         Log request headers to output.");
+    puts("  -q         Retain query string as part of request path.");
     puts("");
     puts("osws will serve out the files given on the command-line exactly");
     puts("once, in the order given. By default a request to / (the root)");
@@ -453,6 +510,13 @@ int main(int argc, char **argv) {
             // Change local port.
             port = argv[i + 1];
             i++;
+        } else if (strcmp(argv[i], "-m") == 0) {
+            magic = magic_open(MAGIC_MIME_TYPE);
+            magic_load(magic, NULL);
+            populate_extensions();
+        } else if (strcmp(argv[i], "-M") == 0) {
+            add_extension(argv[i+1], argv[i+2]);
+            i += 2;
         } else if (strcmp(argv[i], "-d") == 0) {
             // Serve a directory instead.
             directory = 1;

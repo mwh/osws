@@ -10,7 +10,7 @@ clean:
 	rm -f osws
 
 osws: osws.c
-	$(CC) -std=c99 -Wall -o osws osws.c
+	$(CC) -std=c99 -Wall -o osws osws.c -lmagic
 
 release: clean
 	(cd /tmp && \
