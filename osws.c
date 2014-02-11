@@ -441,9 +441,10 @@ int init_server(char *port) {
     struct addrinfo hints;
     struct addrinfo *servinfo;
     int yes = 1;
+    int no = 0;
     memset(&hints, 0, sizeof(hints));
 
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET6;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
     if ((status = getaddrinfo(NULL, port, &hints, &servinfo)) != 0) {
@@ -456,7 +457,8 @@ int init_server(char *port) {
                    sizeof(int)) == -1) {
         perror("setsockopt");
         exit(1);
-    } 
+    }
+    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&no, sizeof(no));
     if (bind(sock, servinfo->ai_addr, servinfo->ai_addrlen) != 0) {
         fprintf(stderr, "bind error: %s\n", strerror(errno));
         exit(1);
